@@ -42,7 +42,9 @@ typedef struct {
 
 } boot_code_t;
 
-static boot_code_t    bootCode;
+#define PLP_L2_DATA      __attribute__((section(".ram")))
+
+PLP_L2_DATA static boot_code_t    bootCode;
 
 static void __attribute__((noreturn)) bootFromOther(int platform);
 
