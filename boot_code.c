@@ -99,31 +99,18 @@ static void flash_read(boot_code_t *data, unsigned int flashAddr, unsigned int l
   if (!data->hyperflash) {
     unsigned int *buffer = data->udma_buffer;
     int buff_size;
-    if (data->qpi) {
-      buff_size = 8 * 4;
-      *(volatile int *)&buffer[0] = SPI_CMD_SOT       (0);
-      *(volatile int *)&buffer[1] = SPI_CMD_SEND_CMD  (0xEC, 8, 0);
-      *(volatile int *)&buffer[2] = SPI_CMD_SEND_ADDR (32, 1);
-      *(volatile int *)&buffer[3] = SPI_CMD_SEND_ADDR_VALUE(flashAddr);
-      *(volatile int *)&buffer[4] = SPI_CMD_SEND_CMD  (0x00, 8, 1);
-      *(volatile int *)&buffer[5] = SPI_CMD_DUMMY     (15);
-      *(volatile int *)&buffer[6] = SPI_CMD_RX_DATA(size*8, 1, SPI_CMD_BYTE_ALIGN_ENA);
-      *(volatile int *)&buffer[7] = SPI_CMD_EOT       (1);
-    } else {
-      buff_size = 7 * 4;
-      *(volatile int *)&buffer[0] = SPI_CMD_SOT       (0);
-      *(volatile int *)&buffer[1] = SPI_CMD_SEND_CMD  (0x0C, 8, 0);
-      *(volatile int *)&buffer[2] = SPI_CMD_SEND_ADDR (32, 0);
-      *(volatile int *)&buffer[3] = SPI_CMD_SEND_ADDR_VALUE(flashAddr);
-      *(volatile int *)&buffer[4] = SPI_CMD_DUMMY     (15);
-      *(volatile int *)&buffer[5] = SPI_CMD_RX_DATA(size*8, 0, SPI_CMD_BYTE_ALIGN_ENA);
-      *(volatile int *)&buffer[6] = SPI_CMD_EOT       (1);
-    }
+    buff_size = 7 * 4;
+    *(volatile int *)&buffer[0] = SPI_CMD_CFG       (0, 0, 0);      
+    *(volatile int *)&buffer[1] = SPI_CMD_SOT       (0);
+    *(volatile int *)&buffer[2] = SPI_CMD_SEND_CMD  (0x03, 8, SPI_CMD_QPI_DIS);
+    *(volatile int *)&buffer[3] = SPI_CMD_SEND_BITS ((flashAddr>>8) & 0xFFFF,16, SPI_CMD_QPI_DIS);
+    *(volatile int *)&buffer[4] = SPI_CMD_SEND_BITS (flashAddr & 0xFF,8, SPI_CMD_QPI_DIS);
+    *(volatile int *)&buffer[5] = SPI_CMD_RX_DATA(size, SPI_CMD_4_WORD_PER_TRANSF, 8, SPI_CMD_QPI_DIS, SPI_CMD_MSB_FIRST);
+    *(volatile int *)&buffer[6] = SPI_CMD_EOT       (1, 0);
 
     plp_udma_enqueue(UDMA_SPIM_RX_ADDR(0), l2Addr, size, UDMA_CHANNEL_CFG_EN | UDMA_CHANNEL_CFG_SIZE_32);
-    plp_udma_enqueue(UDMA_SPIM_TX_ADDR(0), (unsigned int)data->udma_buffer, buff_size, UDMA_CHANNEL_CFG_EN | UDMA_CHANNEL_CFG_SIZE_32);
+    plp_udma_enqueue(UDMA_SPIM_CMD_ADDR(0), (unsigned int)data->udma_buffer, buff_size, UDMA_CHANNEL_CFG_EN | UDMA_CHANNEL_CFG_SIZE_32);
     wait_soc_event();
-
   } else {
 #ifdef PLP_UDMA_HAS_HYPER
     hal_hyper_flash_ext_addr_set((flashAddr));
@@ -134,19 +121,6 @@ static void flash_read(boot_code_t *data, unsigned int flashAddr, unsigned int l
 }
 
 
-
-static int setReg(unsigned int *buffer, int index, unsigned addrAndVal, int eotRaise)
-{
-  *(volatile int *)&buffer[0] = SPI_CMD_SOT      (0);
-  *(volatile int *)&buffer[1] = SPI_CMD_SEND_CMD (0x06, 8, 0);    //write enable 
-  *(volatile int *)&buffer[2] = SPI_CMD_EOT      (0);
-  *(volatile int *)&buffer[3] = SPI_CMD_SOT      (0);           
-  *(volatile int *)&buffer[4] = SPI_CMD_SEND_CMD (0x0071, 8, 0);
-  *(volatile int *)&buffer[5] = SPI_CMD_SEND_ADDR(32, 0);
-  *(volatile int *)&buffer[6] = addrAndVal;
-  *(volatile int *)&buffer[7] = SPI_CMD_EOT      (eotRaise);
-  return 8;
-}
 
 #ifdef PLP_UDMA_HAS_HYPER
 static void flash_enqueueCommand(boot_code_t *data, unsigned short value, unsigned int addr) {
@@ -161,17 +135,6 @@ static void flash_enqueueCommand(boot_code_t *data, unsigned short value, unsign
 static void flash_checkAndConf(boot_code_t *data)
 {
   if (!data->hyperflash) {
-    int index = 0;
-    if(data->qpi) {
-      // CR1V config: quad IO mode (only allows quad mode operations but instruction is still normal mode)
-      index += setReg(&data->udma_buffer[index], index, 0x80000202, 0);
-    }
-    
-    // CR2V config: 15 dummy cycles, 4 bytes address, no QPI mode
-    index += setReg(&data->udma_buffer[index], index, 0x8000030f, 1);
-
-    plp_udma_enqueue(UDMA_SPIM_TX_ADDR(0), (unsigned int)data->udma_buffer, index*4, UDMA_CHANNEL_CFG_EN | UDMA_CHANNEL_CFG_SIZE_32);
-    wait_soc_event();
   } else {
 
 #ifdef PLP_UDMA_HAS_HYPER
