@@ -15,6 +15,7 @@
  */
 
 #include "hal/pulp.h"
+#include "archi/pulp.h"
 #include <stddef.h>
 
 #define BOOT_STACK_SIZE  1024
@@ -47,6 +48,15 @@ typedef struct {
 PLP_L2_DATA static boot_code_t    bootCode;
 
 static void __attribute__((noreturn)) bootFromOther(int platform);
+
+static void boot_abort() {
+  hal_itc_enable_value_set(0);
+  while(1)
+  {
+    hal_itc_wait_for_interrupt();
+  }
+}
+
 
 
 #ifdef DEBUG
@@ -375,8 +385,16 @@ static void __attribute__((noreturn)) bootFromOther(int platform)
 
   }
 
-  // Nothing was specified or something incorrect, just do the normal boot from rom
-  bootFromRom(0, 1);
+  if (apb_soc_bootsel_get(ARCHI_APB_SOC_CTRL_ADDR))
+  {
+    // If bootsel pad is 1, it means an external loader wants us to stop so that it can take over
+    boot_abort();
+  }
+  else
+  {
+    // Nothing was specified or something incorrect, just do the normal boot from rom
+    bootFromRom(0, 1);
+  }
 
   while(1);
 }
