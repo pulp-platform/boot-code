@@ -13,4 +13,12 @@ PULP_CFLAGS += -Os -g -fno-jump-tables
 
 PULP_LDFLAGS += -nostdlib
 
+stimuli:
+	./stim_utils.py  \
+		--binary=boot-pulp \
+		--stim-bin=rom.bin \
+		--area=0x1a000000:0x01000000
+
+
+
 include $(PULP_SDK_HOME)/install/rules/pulp_rt.mk
