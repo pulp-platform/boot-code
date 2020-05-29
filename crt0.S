@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "config.h"
 #include "archi/pulp.h"
 
   .section .text

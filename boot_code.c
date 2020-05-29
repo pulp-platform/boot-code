@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "config.h"
 #include "hal/pulp.h"
 #include "archi/pulp.h"
 #include <stddef.h>
