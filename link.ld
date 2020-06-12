@@ -6,7 +6,7 @@ __DYNAMIC  =  0;
 MEMORY
 {
   ROM         : ORIGIN = 0x1A000000, LENGTH = 0x2000
-  L2          : ORIGIN = 0x1C000000, LENGTH = 0x4000
+  L2          : ORIGIN = 0x1C000000, LENGTH = 0x3000
 }
 
 /* We have to align each sector to word boundaries as our current s19->slm

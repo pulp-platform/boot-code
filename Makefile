@@ -14,6 +14,7 @@ endif
 
 LDFLAGS += -Tlink.ld -nostdlib
 CFLAGS += -Os -g -fno-jump-tables -I$(CURDIR)/include
+CFLAGS += -march=rv32imcxgap9
 
 OBJS += $(patsubst %.c,$(BUILDDIR)/%.o,$(SRCS))
 OBJS += $(patsubst %.S,$(BUILDDIR)/%.o,$(ASM_SRCS))
@@ -43,7 +44,7 @@ stimuli.gvsoc:
 		--binary=$(BOOTCODE) \
 		--stim-bin=rom.bin \
 		--area=0x1a000000:0x01000000
-		
+
 stimuli.rtl:
 	objcopy --srec-len 1 --output-target=srec $(BOOTCODE) $(BOOTCODE).s19
 	./s19toboot.py $(BOOTCODE).s19 boot_code.cde pulp
