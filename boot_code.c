@@ -17,6 +17,7 @@
 #include "config.h"
 #include "hal/pulp.h"
 #include "archi/pulp.h"
+#include "./hyperbus_test.h"
 #include <stddef.h>
 
 #define BOOT_STACK_SIZE  1024
@@ -97,6 +98,7 @@ static inline void step_done(boot_code_t *data) {
 void wait_soc_event()
 {
   hal_itc_enable_set(1 << ARCHI_FC_EVT_SOC_EVT);
+
   while(!((hal_itc_status_value_get() >> ARCHI_FC_EVT_SOC_EVT) & 1)) {
     hal_itc_wait_for_interrupt();
   }
@@ -107,6 +109,7 @@ void wait_soc_event()
 
 static void flash_read(boot_code_t *data, unsigned int flashAddr, unsigned int l2Addr, unsigned int size)
 {
+  
   if (!data->hyperflash) {
     unsigned int *buffer = data->udma_buffer;
     int buff_size;
@@ -123,11 +126,10 @@ static void flash_read(boot_code_t *data, unsigned int flashAddr, unsigned int l
     plp_udma_enqueue(UDMA_SPIM_CMD_ADDR(0), (unsigned int)data->udma_buffer, buff_size, UDMA_CHANNEL_CFG_EN | UDMA_CHANNEL_CFG_SIZE_32);
     wait_soc_event();
   } else {
-#ifdef PLP_UDMA_HAS_HYPER
-    hal_hyper_flash_ext_addr_set((flashAddr));
-    plp_udma_enqueue(UDMA_HYPER_RX_ADDR(0), l2Addr, size, UDMA_CHANNEL_CFG_EN | UDMA_CHANNEL_CFG_SIZE_32);
-    wait_soc_event();
-#endif
+    int id;
+    id = udma_hyper_id_alloc();
+    udma_hyper_dread(size, flashAddr, l2Addr, 0, (unsigned int) id);
+    udma_hyper_wait((unsigned int) id);
   }
 }
 
@@ -148,26 +150,7 @@ static void flash_checkAndConf(boot_code_t *data)
   if (!data->hyperflash) {
   } else {
 
-#ifdef PLP_UDMA_HAS_HYPER
-
-    plp_udma_cg_set(plp_udma_cg_get() | (1<<UDMA_HYPER_ID(0)));
-
-    // Set memory base address with RAM = 16M
-    hal_hyper_udma_mbr0_set(REG_MBR0);
-    hal_hyper_udma_mbr1_set(REG_MBR1>>24);
-
-    /* Device type of connected memory */
-    // HyperRAM
-    hal_hyper_udma_dt0_set(1);
-    // HyperFlash
-    hal_hyper_udma_dt1_set(0);
-
-    // When using flash, this bit should set to 0, always memory access
-    hal_hyper_udma_crt1_set(MEM_ACCESS);
-
-    hal_hyper_udma_crt0_set(MEM_ACCESS);
-
-#endif
+    udma_hyper_flash_setup();
 
   }
 }
@@ -198,10 +181,10 @@ static void init(boot_code_t *data)
   soc_eu_eventMask_reset(SOC_FC_FIRST_MASK);
   soc_eu_fcEventMask_setEvent(ARCHI_SOC_EVENT_SPIM0_EOT);
   soc_eu_fcEventMask_setEvent(ARCHI_SOC_EVENT_UART_TX(0));
-#ifdef ARCHI_UDMA_HAS_HYPER
-  soc_eu_fcEventMask_setEvent(ARCHI_SOC_EVENT_HYPER_RX(0));
-  soc_eu_fcEventMask_setEvent(ARCHI_SOC_EVENT_HYPER_TX(0));
-#endif
+//#ifdef ARCHI_UDMA_HAS_HYPER
+  //soc_eu_fcEventMask_setEvent(ARCHI_SOC_EVENT_HYPER_RX(0));
+  //soc_eu_fcEventMask_setEvent(ARCHI_SOC_EVENT_HYPER_TX(0));
+//#endif
 #endif
 
   // wait some time to have proper power up of external flash
@@ -212,6 +195,7 @@ static void init(boot_code_t *data)
 static void deinit(boot_code_t *data) {
   plp_uart_disable(0);
   soc_eu_eventMask_reset(SOC_FC_FIRST_MASK);
+  udma_hyper_sleep();
   plp_udma_cg_set(0);
 }
 
@@ -267,6 +251,7 @@ __attribute__((noreturn)) void changeStack(boot_code_t *data, unsigned int entry
 
 static void getMemAreas(boot_code_t *data)
 {
+  // to see what is &data-> header
   flash_read(data, 0, (unsigned int)(long)&data->header, sizeof(data->header));
 
   int nbArea = data->header.nbAreas;
@@ -318,8 +303,9 @@ static void bootFromRom(int hyperflash, int qpi)
   boot_code_t *data = &bootCode;
 
   data->hyperflash = hyperflash;
-  if (hyperflash) data->blockSize = HYPER_FLASH_BLOCK_SIZE;
-  else data->blockSize = FLASH_BLOCK_SIZE;
+  //if (hyperflash) data->blockSize = HYPER_FLASH_BLOCK_SIZE;
+  //else data->blockSize = FLASH_BLOCK_SIZE;
+  data->blockSize = FLASH_BLOCK_SIZE;
   data->qpi = qpi;
 
   init(data);
@@ -331,8 +317,9 @@ static void bootFromRom(int hyperflash, int qpi)
   boot_code_t *newData = findDataFit(data);
   newData->hyperflash = hyperflash;
   newData->qpi = qpi;
-  if (hyperflash) newData->blockSize = HYPER_FLASH_BLOCK_SIZE;
-  else newData->blockSize = FLASH_BLOCK_SIZE;
+  //if (hyperflash) newData->blockSize = HYPER_FLASH_BLOCK_SIZE;
+  //else newData->blockSize = FLASH_BLOCK_SIZE;
+  newData->blockSize = FLASH_BLOCK_SIZE;
 
   loadBinaryAndStart_newStack(newData);
 
@@ -346,8 +333,8 @@ static void __attribute__((noreturn)) bootFromJtag()
   // Just wait until the external env notify us that the binary is loaded
   while(1) {
     unsigned int value = apb_soc_jtag_reg_read();
-    if (apb_soc_jtag_reg_ext(value) & 1) break;
     wait_clock_ref(1);
+    if (apb_soc_jtag_reg_ext(value) & 1) break;
   }
 
   // And jump to the loaded code
@@ -358,7 +345,6 @@ static void __attribute__((noreturn)) bootFromJtag()
 static __attribute__((noreturn)) void choose_boot_mode(int mode, int platform)
 {
   switch (mode) {
-
     case APB_SOC_BOOT_SPIM:
       bootFromRom(0, 0);
       break;
@@ -367,9 +353,18 @@ static __attribute__((noreturn)) void choose_boot_mode(int mode, int platform)
       bootFromJtag();
       break;
 
+    case APB_SOC_BOOT_SPIM_QPI:
+      bootFromRom(0,1);
+      break;
+
+    case APB_SOC_BOOT_HYPER:
+      bootFromRom(1,0);
+      break;
+
     case APB_SOC_BOOT_OTHER:
       bootFromOther(platform);
       break;
+
   }  
   while(1);
 }
@@ -377,7 +372,9 @@ static __attribute__((noreturn)) void choose_boot_mode(int mode, int platform)
 static void __attribute__((noreturn)) bootFromOther(int platform)
 {  
   // First jtag bit tell us what to do
+
   unsigned int value = apb_soc_jtag_reg_ext(apb_soc_jtag_reg_read());
+
   if (value) {
     // Value is not zero, check it to see how to boot
     unsigned int mode = ARCHI_REG_FIELD_GET(value, 1, APB_SOC_JTAG_REG_EXT_WIDTH-1);
@@ -394,7 +391,7 @@ static void __attribute__((noreturn)) bootFromOther(int platform)
   else
   {
     // Nothing was specified or something incorrect, just do the normal boot from rom
-    bootFromRom(0, 1);
+    bootFromRom(0, 1); //QSPI flash
   }
 
   while(1);
@@ -402,6 +399,7 @@ static void __attribute__((noreturn)) bootFromOther(int platform)
 
 void __attribute__((noreturn)) main() 
 {
+
 
   bootFromOther(APB_SOC_PLT_OTHER);
   

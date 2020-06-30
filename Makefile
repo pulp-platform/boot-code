@@ -7,6 +7,7 @@ BOOTCODE = $(BUILDDIR)/bootcode
 
 PULP_CC = riscv32-unknown-elf-gcc
 PULP_LD = riscv32-unknown-elf-gcc
+CFLAGS += -march=rv32imcxgap9
 
 ifndef VERBOSE
 V = @
