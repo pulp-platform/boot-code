@@ -5,8 +5,15 @@ BUILDDIR ?= $(CURDIR)/build
 
 BOOTCODE = $(BUILDDIR)/bootcode
 
-PULP_CC = riscv32-unknown-elf-gcc
-PULP_LD = riscv32-unknown-elf-gcc
+#include $(RULES_DIR)/pmsis_rules.mk
+
+# PULP rules
+#PULP_CC ?= riscv32-unknown-elf-gcc -D__riscv__ -march=rv32imcxgap9 #-DARCHI_CORE_HAS_PULPV2
+#PULP_LD ?= riscv32-unknown-elf-gcc -D__riscv__  -march=rv32imcxgap9
+
+#CoreV rules
+PULP_CC=riscv32-corev-elf-gcc -D__riscv__
+PULP_LD=riscv32-corev-elf-gcc -D__riscv__ 
 
 ifndef VERBOSE
 V = @

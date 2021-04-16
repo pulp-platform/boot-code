@@ -39,8 +39,8 @@
 static inline unsigned int evt_read32(unsigned int base, unsigned int offset)
 {
   unsigned int value;
-  #if !defined(__LLVM__) && ((defined(OR1K_VERSION) && OR1K_VERSION >= 5) || (defined(RISCV_VERSION) && RISCV_VERSION >= 4))
-  value = __builtin_pulp_event_unit_read((int *)base, offset);
+  #if !defined(__LLVM__) && ((defined(OR1K_VERSION) && OR1K_VERSION >= 5) || (defined(RISCV_VERSION) && RISCV_VERSION >= 4)) && !defined(CONFIG_PULP)
+  value = __builtin_pulp_event_unit_read_fenced((int *)base, offset);
   #else
   __asm__ __volatile__ ("" : : : "memory");
   value = pulp_read32(base + offset);
@@ -51,7 +51,15 @@ static inline unsigned int evt_read32(unsigned int base, unsigned int offset)
 #else
 #define evt_read32(base,offset) \
   ({ \
-    __builtin_pulp_event_unit_read((int *)base, offset); \
+    unsigned int value; \
+#if !defined(CONFIG_PULP)
+    value = __builtin_pulp_event_unit_read_fenced((int *)base, offset); \
+#else
+  __asm__ __volatile__ ("" : : : "memory"); \
+  value = pulp_read32(base + offset); \
+  __asm__ __volatile__ ("" : : : "memory"); \
+#endif
+    value; \
   })
 #endif
 
@@ -63,7 +71,7 @@ static inline unsigned int evt_read32(unsigned int base, unsigned int offset)
   */
 static inline unsigned int eu_evt_status()
 {
-  return pulp_read32(ARCHI_EU_DEMUX_ADDR + EU_CORE_BUFFER);
+  return ARCHI_READ(ARCHI_EU_DEMUX_ADDR, EU_CORE_BUFFER);
 }
 
 /** Get active events. 
@@ -74,7 +82,7 @@ static inline unsigned int eu_evt_status()
   */
 static inline unsigned int eu_evt_statusMasked()
 {
-  return pulp_read32(ARCHI_EU_DEMUX_ADDR + EU_CORE_BUFFER_MASKED);
+  return ARCHI_READ(ARCHI_EU_DEMUX_ADDR, EU_CORE_BUFFER_MASKED);
 }
 
 /** Clear some bits of the event status register. 
@@ -83,7 +91,7 @@ static inline unsigned int eu_evt_statusMasked()
   */
 static inline void eu_evt_clr(unsigned int evtMask)
 {
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_CORE_BUFFER_CLEAR, evtMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_CORE_BUFFER_CLEAR, evtMask);
 }
 
 /** Modify the event mask. 
@@ -95,7 +103,7 @@ static inline void eu_evt_clr(unsigned int evtMask)
   */
 static inline void eu_evt_mask(unsigned int evtMask)
 {
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_CORE_MASK, evtMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_CORE_MASK, evtMask);
 }
 
 /** Set part of the event mask to 1. 
@@ -105,12 +113,7 @@ static inline void eu_evt_mask(unsigned int evtMask)
   */
 static inline void eu_evt_maskSet_base(unsigned int base, unsigned int evtMask)
 {
-#if defined(__riscv__) && !defined(__LLVM__)
-  // TODO riscv compiler is not able to factorize the event unit base if we use classic C code
-  __asm volatile ("sw %0,%1(%2)" : : "r" (evtMask), "I" (EU_CORE_MASK_OR), "r" (base) );
-#else
-  pulp_write32(base + EU_CORE_MASK_OR, evtMask);
-#endif
+  ARCHI_WRITE(base, EU_CORE_MASK_OR, evtMask);
 }
 
 /** Set part of the event mask to 1. 
@@ -120,7 +123,7 @@ static inline void eu_evt_maskSet_base(unsigned int base, unsigned int evtMask)
   */
 static inline void eu_evt_maskSet(unsigned int evtMask)
 {
-  eu_evt_maskSet_base(ARCHI_EU_DEMUX_ADDR, evtMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_CORE_MASK_OR, evtMask);
 }
 
 /** Set part of the event mask to 0. 
@@ -129,12 +132,7 @@ static inline void eu_evt_maskSet(unsigned int evtMask)
   */
 static inline void eu_evt_maskClr(unsigned int evtMask)
 {
-#if defined(__riscv__) && !defined(__LLVM__)
-  // TODO riscv compiler is not able to factorize the event unit base if we use classic C code
-  __asm volatile ("sw %0,%1(%2)" : : "r" (evtMask), "I" (EU_CORE_MASK_AND), "r" (ARCHI_EU_DEMUX_ADDR) );
-#else
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_CORE_MASK_AND, evtMask);
-#endif
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_CORE_MASK_AND, evtMask);
 }
 
 /** Put the core to sleep mode until it receives an event
@@ -148,12 +146,12 @@ static inline unsigned int eu_evt_wait()
 
 static inline unsigned int eu_evt_wait_noreplay()
 {
-  return pulp_read32(ARCHI_EU_DEMUX_ADDR + EU_CORE_EVENT_WAIT);
+  return ARCHI_READ(ARCHI_EU_DEMUX_ADDR, EU_CORE_EVENT_WAIT);
 }
 
 static inline unsigned int eu_wait_for_interrupt()
 {
-  return pulp_read32(ARCHI_EU_DEMUX_ADDR + EU_CORE_EVENT_WAIT);
+  return ARCHI_READ(ARCHI_EU_DEMUX_ADDR, EU_CORE_EVENT_WAIT);
 }
 
 /** Put the core to sleep mode until it receives an event and clears the active events
@@ -202,22 +200,22 @@ static inline unsigned int eu_fc_evt_maskWaitAndClr(unsigned evtMask)
 
 static inline unsigned int eu_evt_statusIrqMasked()
 {
-  return pulp_read32(ARCHI_EU_DEMUX_ADDR + EU_CORE_BUFFER_IRQ_MASKED);
+  return ARCHI_READ(ARCHI_EU_DEMUX_ADDR, EU_CORE_BUFFER_IRQ_MASKED);
 }
 
 static inline void eu_irq_mask(unsigned int irqMask)
 {
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_CORE_MASK_IRQ, irqMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_CORE_MASK_IRQ, irqMask);
 }
 
 static inline void eu_irq_secMask(unsigned int irqMask)
 {
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_CORE_MASK_SEC_IRQ, irqMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_CORE_MASK_SEC_IRQ, irqMask);
 }
 
 static inline void eu_irq_maskSet_base(unsigned int base, unsigned int irqMask)
 {
-  pulp_write32(base + EU_CORE_MASK_IRQ_OR, irqMask);
+  ARCHI_WRITE(base, EU_CORE_MASK_IRQ_OR, irqMask);
 }
 
 static inline void eu_irq_maskSet(unsigned int irqMask)
@@ -227,22 +225,22 @@ static inline void eu_irq_maskSet(unsigned int irqMask)
 
 static inline void eu_irq_maskClr(unsigned int irqMask)
 {
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_CORE_MASK_IRQ_AND, irqMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_CORE_MASK_IRQ_AND, irqMask);
 }
 
 static inline void eu_irq_secMaskSet(unsigned int irqMask)
 {
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_SEC_DEMUX_OFFSET + EU_SEC_MASK_OR, irqMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_SEC_DEMUX_OFFSET + EU_SEC_MASK_OR, irqMask);
 }
 
 static inline void eu_irq_secMaskClr(unsigned int irqMask)
 {
-  pulp_write32(ARCHI_EU_DEMUX_ADDR + EU_SEC_DEMUX_OFFSET + EU_SEC_MASK_AND, irqMask);
+  ARCHI_WRITE(ARCHI_EU_DEMUX_ADDR, EU_SEC_DEMUX_OFFSET + EU_SEC_MASK_AND, irqMask);
 }
 
 static inline unsigned int eu_irq_status()
 {
-  return pulp_read32(ARCHI_EU_DEMUX_ADDR + EU_CORE_BUFFER_IRQ_MASKED);
+  return ARCHI_READ(ARCHI_EU_DEMUX_ADDR, EU_CORE_BUFFER_IRQ_MASKED);
 }
 
 //!@}
@@ -391,10 +389,14 @@ static inline void eu_mutex_lock(unsigned int mutexAddr)
   evt_read32(mutexAddr, 0);
 }
 
+#if defined(__OPTIMIZE__)
 static inline void eu_mutex_lock_from_id(unsigned int id)
 {
   evt_read32(ARCHI_EU_DEMUX_ADDR, EU_MUTEX_DEMUX_OFFSET + (id << 2));
 }
+#else
+#define eu_mutex_lock_from_id(id) evt_read32(ARCHI_EU_DEMUX_ADDR, EU_MUTEX_DEMUX_OFFSET + ((id) << 2))
+#endif
 
 static inline void eu_mutex_unlock(unsigned int mutexAddr)
 {
@@ -432,12 +434,12 @@ static inline unsigned int eu_dispatch_pop()
 
 static inline void eu_dispatch_push(unsigned value)
 {
-  IP_WRITE(ARCHI_EU_DEMUX_ADDR, EU_DISPATCH_DEMUX_OFFSET + EU_DISPATCH_FIFO_ACCESS, value);
+  IP_WRITE_PTR(ARCHI_EU_DEMUX_ADDR, EU_DISPATCH_DEMUX_OFFSET + EU_DISPATCH_FIFO_ACCESS, value);
 }
 
 static inline void eu_dispatch_push_base(unsigned int base, unsigned value)
 {
-  IP_WRITE(base, EU_DISPATCH_FIFO_ACCESS, value);
+  IP_WRITE_PTR(base, EU_DISPATCH_FIFO_ACCESS, value);
 }
 
 static inline void eu_dispatch_team_config(unsigned value)

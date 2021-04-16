@@ -34,7 +34,7 @@
 #include "archi/udma/hyper/udma_hyper_v2.h"
 
 #define REG_MBR0      0
-#define REG_MBR1      0x01000000
+#define REG_MBR1      0x10000000
 
 static inline void hal_hyper_udma_ext_addr_set(unsigned int value)
 {
